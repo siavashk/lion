@@ -33,72 +33,8 @@ def interpolate_noise(noise):
         # noise[k] = p * noise_b + (1-p) * noise_a 
         noise[k] = np.sqrt(p) * noise_b + np.sqrt(1-p) * noise_a  
     return noise 
-#def get_data(num_points=3072, num_selected=50):
-#    import h5py 
-#    import torch 
-#    import sys 
-#    import os 
-#    from datasets.data_path import get_path 
-#    
-#    synsetid_to_cate = {
-#        "02691156": "airplane",
-#        "02828884": "bench",
-#        "02958343": "car",
-#        "03001627": "chair",
-#        "03211117": "display",
-#        "03636649": "lamp",
-#        "04256520": "sofa",
-#        "04379243": "table",
-#        "04530566": "watercraft",
-#    }
-#
-#
-#    root_dir = get_path('pointflow') 
-#    out_dict = [] 
-#    out_name = [] 
-#    for synset_id in synsetid_to_cate.keys():
-#        filename = os.path.join(root_dir, f'{synset_id}', 'train')
-#        tr_out_full = []
-#        for file in sorted(os.listdir(filename))[:10]:
-#            pts = np.load(filename + '/' + file)
-#            tr_out_full.append(pts)
-#        tr_out_full = np.stack(tr_out_full)
-#        #with h5py.File(filename, "r") as h5f:
-#        #    tr_out_full = h5f['surface_points/points'][5:5+num_selected]  
-#        if tr_out_full.shape[1] > num_points:
-#            pt_cur = []
-#            for b in range(tr_out_full.shape[0]):
-#                tr_idxs = np.random.choice(tr_out_full.shape[1], num_points)
-#                pt_cur.append(tr_out_full[b, tr_idxs]) ## pt_cur[tr_idxs]
-#            tr_out_full = torch.from_numpy(np.stack(pt_cur))
-#        # out_dict[synsetid_to_cate[synset_id]] = tr_out_full 
-#        out_dict.append(tr_out_full) 
-#        out_name.extend([synsetid_to_cate[synset_id]] * num_selected)
-#    out_dict = torch.cat(out_dict) 
-#    logger.info('created data: {}, ', out_dict.shape)
-#    return out_dict, out_name 
-#
-#def fun_hash(a, b):
-#    if a < b:
-#        return f'{a}-{b}'
-#    else:
-#        return f'{b}-{a}'
-#
-#def fun_select_count_pair(names, a, b):
-#    select_all_pair = [] 
-#    indexes = list( np.arange(len(names)) ) 
-#    indexes_a = [i for ii, i in enumerate(indexes) if names[ii] == a] 
-#    indexes_b = [i for ii, i in enumerate(indexes) if names[ii] == b]
-#    hash_d = [] 
-#    logger.info('select paits for: {}, {}', a, b) 
-#    for ai in indexes_a:
-#        for bi in indexes_b: 
-#            if ai != bi and fun_hash(ai, bi) not in hash_d:
-#                hash_d.append(fun_hash(ai, bi)) 
-#                select_all_pair.append([ai, bi])
-#    logger.info('get pairs: {}', len(select_all_pair))
-#    return select_all_pair 
-#
+
+
 class Trainer(BaseTrainer):
     is_diffusion = 0 
     generate_mode_global = 'interpolate'
@@ -134,50 +70,6 @@ class Trainer(BaseTrainer):
         gen_x_lns_list = []
         tag_cur = self.cfg.voxel2pts.diffusion_steps[0]
         num_selected = 60 
-        #input_pts, input_names = get_data(self.num_points, num_selected)
-
-        #is_all_class_model = 'nsall' in self.cfg.save_dir
-        #logger.info('is_all_class_model: {}', is_all_class_model)
-        #if is_all_class_model: 
-        #    select_count_pair = [] 
-        #    class_pairs = [
-        #        ['airplane', 'car'],
-        #        #['car', 'watercraft'],
-        #        #['watercraft', 'airplane']
-        #        #['airplane', 'bench'],
-        #        #['bench', 'table'],
-        #        #['table', 'chair']
-        #        #['chair', 'display'],
-        #        ##['chair', 'lamp'],
-        #        ##['lamp', 'watercraft']
-        #            ]
-
-        #    for class_a, class_b in class_pairs:
-        #        select_count_pair_cur = fun_select_count_pair(input_names, class_a, class_b) 
-        #        select_count_pair.extend(select_count_pair_cur) 
-
-        #else:
-        #    class_a = class_b = self.cfg.data.cates 
-        #    select_count_pair = fun_select_count_pair(input_names, class_a, class_b) 
-
-        #input_pts_list = [] 
-        #input_pts_cates = [] 
-        #print('number of pair', len(select_count_pair))
-        #for select_count in select_count_pair:
-        #    input_pts_list_pair = [] 
-        #    input_pts_cates_pair = [] 
-        #    for vi in select_count:
-        #        input_pts_list_pair.append(input_pts[vi][None])
-        #        input_pts_cates_pair.append(input_names[vi])
-        #    input_pts_list.append(torch.cat(input_pts_list_pair, dim=0))
-        #    input_pts_cates.append('-'.join(input_pts_cates_pair)) 
-
-        ##shuffle_idx = list(range(len(input_pts_list)))
-        ##random.Random(38383).shuffle(shuffle_idx)
-        ##input_pts_list = [input_pts_list[i] for i in shuffle_idx][:50] # select first 50 pairs 
-        ##input_pts_cates = [input_pts_cates[i] for i in shuffle_idx][:50] # select first 50 pairs 
-        #logger.info('num of input pts: {}, cates: {}', 
-        #        len(input_pts_list), input_pts_cates[:10])
         output_dir_template = self.cfg.save_dir + '/enc%d_%s_%s/'%(num_selected, self.generate_mode_global, self.generate_mode_local) 
         vis_output_dir = self.cfg.save_dir + '/vis_enc%d_%s_%s/'%(num_selected, self.generate_mode_global, self.generate_mode_local) 
         if not os.path.exists(vis_output_dir):
