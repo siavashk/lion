@@ -9,14 +9,12 @@
 """
     require diffusers-0.11.1
 """
-import os
 import clip
 import torch
-from PIL import Image
 from default_config import cfg as config
 from models.lion import LION
-from utils.vis_helper import plot_points
-from huggingface_hub import hf_hub_download 
+import numpy as np
+import pyvista as pv
 
 model_path = '/home/ubuntu/code/exp/0716/c1/5e4d7ch_train_lion_B8/checkpoints/epoch_1999_iters_9999.pt'
 model_config = '/home/ubuntu/code/exp/0716/c1/5e4d7ch_train_lion_B8/cfg.yml'
@@ -40,7 +38,15 @@ else:
 # output = lion.sample(1 if clip_feat is None else clip_feat.shape[0], clip_feat=clip_feat)
 output = lion.sample(1, clip_feat=None)
 pts = output['points']
-img_name = "tmp.png"
-plot_points(pts, output_name=img_name)
-img = Image.open(img_name)
-img.show()
+pts = pts.cpu().numpy().squeeze(0)
+
+# print(np.min(pts, axis=0))
+# print(np.max(pts, axis=0))
+
+print("meshing...")
+point_cloud = pv.PolyData(pts)
+
+volume = point_cloud.delaunay_3d(alpha=0.08)
+
+mesh = volume.extract_geometry()
+mesh.save("c1.vtk")
