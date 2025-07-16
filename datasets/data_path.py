@@ -11,7 +11,8 @@ import os
 def get_path(dataname=None):
     dataset_path = {}
     dataset_path['pointflow'] = [
-        './data/ShapeNetCore.v2.PC15k/'
+        # '/home/ubuntu/code/scripts/data/ShapeNetCore.v2.PC15k'
+        '/home/ubuntu/code/scripts/outputs3'
 
     ]
     dataset_path['clip_forge_image'] = [

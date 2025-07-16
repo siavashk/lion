@@ -3,10 +3,10 @@ if [ -z "$1" ]
     echo "Require NGPU input; "
     exit
 fi
-DATA=" ddpm.input_dim 3 data.cates car "
+DATA=" ddpm.input_dim 3 data.cates c1 "
 NGPU=$1 # 
 num_node=1
-BS=32 
+BS=8
 total_bs=$(( $NGPU * $BS ))
 if (( $total_bs > 128 )); then 
     echo "[WARNING] total batch_size larger than 128 may lead to unstable training, please reduce the size"

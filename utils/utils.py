@@ -7,14 +7,8 @@
 # license agreement from NVIDIA CORPORATION & AFFILIATES is strictly prohibited.
 """copied and modified from https://github.com/NVlabs/LSGM/blob/5eae2f385c014f2250c3130152b6be711f6a3a5a/util/utils.py"""
 from loguru import logger
-from comet_ml import Experiment, ExistingExperiment
-import wandb as WB
 import os
-import math
 import shutil
-import json
-import time
-import sys
 import types
 from PIL import Image
 import torch
@@ -22,11 +16,7 @@ import torch.nn as nn
 import numpy as np
 from torch import optim
 import torch.distributed as dist
-from torch.cuda.amp import autocast, GradScaler
-USE_COMET = int(os.environ.get('USE_COMET', 1))
-USE_TFB = int(os.environ.get('USE_TFB', 0))
-USE_WB = int(os.environ.get('USE_WB', 0))
-print(f'utils/utils.py: USE_COMET={USE_COMET}, USE_WB={USE_WB}')
+from torch.cuda.amp import autocast
 
 class PixelNormal(object):
     def __init__(self, param, fixed_log_scales=None):
@@ -58,7 +48,7 @@ class PixelNormal(object):
         return log_probs
 
     def sample(self, t=1.):
-        z, rho = sample_normal_jit(
+        z, _ = sample_normal_jit(
             self.means, torch.exp(self.log_scales)*t)  # B, 3, H, W
         return z
 
@@ -270,46 +260,6 @@ def load(model, model_path):
     model.load_state_dict(torch.load(model_path))
 
 
-# def create_exp_dir(path, scripts_to_save=None):
-#    if not os.path.exists(path):
-#        os.makedirs(path, exist_ok=True)
-#    print('Experiment dir : {}'.format(path))
-#
-#    if scripts_to_save is not None:
-#        if not os.path.exists(os.path.join(path, 'scripts')):
-#            os.mkdir(os.path.join(path, 'scripts'))
-#        for script in scripts_to_save:
-#            dst_file = os.path.join(path, 'scripts', os.path.basename(script))
-#            shutil.copyfile(script, dst_file)
-#
-
-# class Logger(object):
-#    def __init__(self, rank, save):
-#        # other libraries may set logging before arriving at this line.
-#        # by reloading logging, we can get rid of previous configs set by other libraries.
-#        from importlib import reload
-#        reload(logging)
-#        self.rank = rank
-#        if self.rank == 0:
-#            log_format = '%(asctime)s %(message)s'
-#            logging.basicConfig(stream=sys.stdout, level=logging.INFO,
-#                                format=log_format, datefmt='%m/%d %I:%M:%S %p')
-#            fh = logging.FileHandler(os.path.join(save, 'log.txt'))
-#            fh.setFormatter(logging.Formatter(log_format))
-#            logging.getLogger().addHandler(fh)
-#            self.start_time = time.time()
-#
-#    def info(self, string, *args):
-#        if self.rank == 0:
-#            elapsed_time = time.time() - self.start_time
-#            elapsed_time = time.strftime(
-#                '(Elapsed: %H:%M:%S) ', time.gmtime(elapsed_time))
-#            if isinstance(string, str):
-#                string = elapsed_time + string
-#            else:
-#                logging.info(elapsed_time)
-#            logging.info(string, *args)
-
 def flatten_dict(dd, separator='_', prefix=''):
     return {prefix + separator + k if prefix else k: v for kk, vv in dd.items()
             for k, v in flatten_dict(vv, separator, kk).items()} \
@@ -324,16 +274,10 @@ class Writer(object):
         self.meter_dict = {}
         if self.rank == 0:
             self.exp = exp
-            if USE_TFB and save is not None:
-                logger.info('init TFB: {}', save)
-                from torch.utils.tensorboard import SummaryWriter
-                self.writer = SummaryWriter(log_dir=save, flush_secs=20)
-            else:
-                logger.info('Not init TFB')
-                self.writer = None
+            logger.info('Not init TFB')
+            self.writer = None
             if self.exp is not None and save is not None:
                 with open(os.path.join(save, 'url.txt'), 'a') as f:
-                    f.write(self.exp.url)
                     f.write('\n')
             self.wandb = wandb
         else:
@@ -354,9 +298,6 @@ class Writer(object):
         if self.exp is not None:
             self.exp.log_parameters(flatten_dict(cfg))
             self.exp.log_parameters(flatten_dict(args))
-        if self.wandb:
-            WB.config.update(flatten_dict(cfg))
-            WB.config.update(flatten_dict(args))
 
     def avg_meter(self, name, value, step=None, epoch=None):
         if self.rank == 0:
@@ -382,7 +323,6 @@ class Writer(object):
         if self.wandb:
             name = args[0]
             v = args[1]
-            WB.log({name: v})
 
     def log_model(self, name, path):
         pass
@@ -390,18 +330,14 @@ class Writer(object):
     def log_other(self, name, value):
         if self.rank == 0 and self.exp is not None:
             self.exp.log_other(name, value)
-        # if self.rank == 0 and self.exp is not None:
-        #    self.exp.log_model(name, path)
 
     def watch(self, model):
-        if self.wandb:
-            WB.watch(model)
+        pass
 
     def log_points_3d(self, scene_name, points, step=0):  # *args, **kwargs):
         if self.rank == 0 and self.exp is not None:
             self.exp.log_points_3d(*args, **kwargs)
-        if self.wandb:
-            WB.log({"point_cloud": WB.Object3D(points)})
+            
 
     def add_figure(self, *args, **kwargs):
         if self.rank == 0 and self.writer is not None:
@@ -437,9 +373,7 @@ class Writer(object):
                 if img.shape[0] == 3 and len(img.shape) == 3:  # 3,H,W
                     img = img.transpose(1, 2, 0)
                 self.exp.log_image(img, name, step=i)
-        if self.wandb and torch.is_tensor(img) and self.rank == 0:
-            ## print(img.shape, img.max(), img.type())
-            WB.log({name: WB.Image(img.numpy())})
+            
 
     def add_histogram(self, *args, **kwargs):
         if self.rank == 0 and self.writer is not None:
@@ -474,39 +408,9 @@ def common_init(rank, seed, save_dir, comet_key=''):
     # prepare logging and tensorboard summary
     #logging = Logger(rank, save_dir)
     logging = None
-    if rank == 0:
-        if os.path.exists('.comet_api'):
-            comet_args = json.load(open('.comet_api', 'r'))
-            exp = Experiment(display_summary_level=0,
-                             disabled=USE_COMET == 0,
-                             **comet_args)
-            exp.set_name(save_dir.split('exp/')[-1])
-            exp.set_cmd_args()
-            exp.log_code(folder='./models/')
-            exp.log_code(folder='./trainers/')
-            exp.log_code(folder='./utils/')
-            exp.log_code(folder='./datasets/')
-        else:
-            exp = None
-
-        if os.path.exists('.wandb_api'):
-            wb_args = json.load(open('.wandb_api', 'r'))
-            wb_dir = '../exp/wandb/' if not os.path.exists(
-                '/workspace/result') else '/workspace/result/wandb/'
-            if not os.path.exists(wb_dir):
-                os.makedirs(wb_dir)
-            WB.init(
-                project=wb_args['project'],
-                entity=wb_args['entity'],
-                name=save_dir.split('exp/')[-1],
-                dir=wb_dir
-            )
-            wandb = True
-        else:
-            wandb = False
-    else:
-        exp = None
-        wandb = False
+    wandb = False
+    exp = None
+        
     writer = Writer(rank, save_dir, exp, wandb)
     logger.info('[common-init] DONE')
 

@@ -79,7 +79,7 @@ class Model(nn.Module):
 
         # ---- original encoder ---- #
         style = z_global  # torch.cat([z_global, cls_emb], dim=1) if self.args.data.cond_on_cat else z_global 
-        style = self.style_mlp(style) if self.style_mlp is not None else style  
+        style = self.style_mlp(style) if self.style_mlp is not None else style
         z = self.encoder([x, style])
         z_mu, z_sigma = z['mu_1d'], z['sigma_1d']
         z_sigma = z_sigma - self.args.shapelatent.log_sigma_offset 

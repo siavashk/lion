@@ -10,11 +10,19 @@
 #include <vector>
 
 #include <ATen/ATen.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <torch/extension.h>
 #include <ATen/cuda/CUDAApplyUtils.cuh>  // at::cuda::getApplyGrid
-#include <THC/THC.h>
 
-#define CHECK_INPUT(x) 
+inline void checkCuda(cudaError_t result, const char *msg) {
+    if (result != cudaSuccess) {
+        throw std::runtime_error(std::string(msg) + ": " + cudaGetErrorString(result));
+    }
+}
 
+// Macro replacements for THC-style checks
+#define CHECK_INPUT(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be a contiguous CUDA tensor")
+#define CHECK_EQ(x, y) TORCH_CHECK((x) == (y), #x " != " #y)
 
 /********************************
 * Forward kernel for approxmatch
@@ -185,7 +193,7 @@ at::Tensor ApproxMatchForward(
   AT_DISPATCH_FLOATING_TYPES(xyz1.scalar_type(), "ApproxMatchForward", ([&] {
         approxmatch<scalar_t><<<32,512>>>(b, n, m, xyz1.data<scalar_t>(), xyz2.data<scalar_t>(), match.data<scalar_t>(), temp.data<scalar_t>());
   }));
-  THCudaCheck(cudaGetLastError());
+  checkCuda(cudaGetLastError(), "emd_ext CUDA kernel error");
 
   return match;
 }
@@ -271,7 +279,7 @@ at::Tensor MatchCostForward(
   AT_DISPATCH_FLOATING_TYPES(xyz1.scalar_type(), "MatchCostForward", ([&] {
         matchcost<scalar_t><<<32,512>>>(b, n, m, xyz1.data<scalar_t>(), xyz2.data<scalar_t>(), match.data<scalar_t>(), cost.data<scalar_t>());
   }));
-  THCudaCheck(cudaGetLastError());
+  checkCuda(cudaGetLastError(), "emd_ext CUDA kernel error");
 
   return cost;
 }
@@ -390,7 +398,7 @@ std::vector<at::Tensor> MatchCostBackward(
         matchcostgrad1<scalar_t><<<32,512>>>(b, n, m, grad_cost.data<scalar_t>(), xyz1.data<scalar_t>(), xyz2.data<scalar_t>(), match.data<scalar_t>(), grad1.data<scalar_t>());
         matchcostgrad2<scalar_t><<<dim3(32,32),256>>>(b, n, m, grad_cost.data<scalar_t>(), xyz1.data<scalar_t>(), xyz2.data<scalar_t>(), match.data<scalar_t>(), grad2.data<scalar_t>());
   }));
-  THCudaCheck(cudaGetLastError());
+  checkCuda(cudaGetLastError(), "emd_ext CUDA kernel error");
 
   return std::vector<at::Tensor>({grad1, grad2});
 }

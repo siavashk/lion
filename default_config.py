@@ -245,7 +245,7 @@ cfg.register_deprecated_key("ddpm.pvc.mlp_after_pvc")
 cfg.ddpm.ddim_step = 200
 
 cfg.data = CN()
-cfg.data.nclass = 55
+cfg.data.nclass = 26
 cfg.data.cond_on_cat = 0
 cfg.data.cond_on_voxel = 0
 cfg.data.eval_test_split = 0  # eval loader will be using test split
@@ -264,8 +264,8 @@ cfg.data.cates = 'chair'  # data category
 cfg.data.tr_max_sample_points = 2048
 cfg.data.te_max_sample_points = 2048
 cfg.data.data_dir = "data/ShapeNetCore.v2.PC15k"  # depreciated
-cfg.data.batch_size = 12
-cfg.data.batch_size_test = 10
+cfg.data.batch_size = 2
+cfg.data.batch_size_test = 2
 cfg.data.dataset_scale = 1
 # -- the following option in terms of normalization should turn into string -- #
 cfg.data.normalize_per_shape = False

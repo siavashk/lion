@@ -7,15 +7,15 @@ loss="mse_sum"
 NGPU=$1 ## 1 #8
 num_node=2
 mem=32
-BS=10 
+BS=8 
 lr=2e-4
 ENT="python train_dist.py --num_process_per_node $NGPU "
 train_vae=False
 cmt="lion"
-ckpt="./lion_ckpt/unconditional/car/checkpoints/vae_only.pt"
+ckpt="/home/ubuntu/code/exp/0715/c1/87f4d6h_hvae_lion_B8/checkpoints/epoch_3999_iters_19999.pt"
 
 $ENT \
-    --config "./lion_ckpt/unconditional/car/cfg.yml" \
+    --config "/home/ubuntu/code/exp/0715/c1/87f4d6h_hvae_lion_B8/cfg2.yml" \
     latent_pts.pvd_mse_loss 1 \
     vis_latent_point 1 \
     num_val_samples 24 \

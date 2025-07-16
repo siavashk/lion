@@ -18,8 +18,8 @@ from models.lion import LION
 from utils.vis_helper import plot_points
 from huggingface_hub import hf_hub_download 
 
-model_path = './lion_ckpt/text2shape/chair/checkpoints/model.pt'
-model_config = './lion_ckpt/text2shape/chair/cfg.yml'
+model_path = '/home/ubuntu/code/exp/0716/c1/5e4d7ch_train_lion_B8/checkpoints/epoch_1999_iters_9999.pt'
+model_config = '/home/ubuntu/code/exp/0716/c1/5e4d7ch_train_lion_B8/cfg.yml'
 
 config.merge_from_file(model_config)
 lion = LION(config)
@@ -37,9 +37,10 @@ if config.clipforge.enable:
     print('clip_feat', clip_feat.shape)
 else:
     clip_feat = None
-output = lion.sample(1 if clip_feat is None else clip_feat.shape[0], clip_feat=clip_feat)
+# output = lion.sample(1 if clip_feat is None else clip_feat.shape[0], clip_feat=clip_feat)
+output = lion.sample(1, clip_feat=None)
 pts = output['points']
-img_name = "/tmp/tmp.png"
+img_name = "tmp.png"
 plot_points(pts, output_name=img_name)
 img = Image.open(img_name)
 img.show()

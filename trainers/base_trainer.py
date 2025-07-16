@@ -8,7 +8,6 @@
 import os
 import time
 from abc import ABC, abstractmethod
-from comet_ml import Experiment
 import torch
 import importlib
 import numpy as np
@@ -413,36 +412,6 @@ class BaseTrainer(ABC):
                     batch_size_test, test_size, output_name)
         gen_pcs = []
 
-        ### ---- ref_pcs ---- #
-        ##ref_pcs = []
-        ##m_pcs, s_pcs = [], []
-        # for i, data in enumerate(test_loader):
-        ##    tr_points = data['tr_points']
-        ##    m, s = data['mean'], data['std']
-        # ref_pcs.append(tr_points) # B,N,3
-        # m_pcs.append(m.float())
-        # s_pcs.append(s.float())
-        ##    sample_num_points = tr_points.shape[1]
-        # assert(tr_points.shape[2] in [3,6]
-        # ), f'expect B,N,3; get {tr_points.shape}'
-        ##ref_pcs = torch.cat(ref_pcs, dim=0)
-        ##m_pcs = torch.cat(m_pcs, dim=0)
-        ##s_pcs = torch.cat(s_pcs, dim=0)
-        # if VIS:
-        ##    img_list = []
-        # for i in range(4):
-        ##        norm_ref, norm_gen = data_helper.normalize_point_clouds([ref_pcs[i], ref_pcs[-i]])
-        ##        img = visualize_point_clouds_3d([norm_ref, norm_gen], [f'ref-{i}', f'ref-{-i}'])
-        ##        img_list.append(torch.as_tensor(img) / 255.0)
-        ##    path = output_name.replace('.pt', '_ref.png')
-        # torchvision.utils.save_image(img_list, path)
-        ##    grid = torchvision.utils.make_grid(img_list)
-        # ndarr = grid.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
-        ##    writer.add_image('ref', grid, 0)
-        # logger.info(writer.url)
-        ##    logger.info('save vis at {}', path)
-
-        # ---- gen_pcs ---- #
         if True:
             len_test_loader = num_ref // batch_size_test + 1
             if self.args.distributed:
@@ -792,7 +761,8 @@ class BaseTrainer(ABC):
         # Save
         if self.writer is not None:
             img_list = []
-            for i in range(10):
+            n_vis = min(10, gen_pcs.shape[0])
+            for i in range(n_vis):
                 points = gen_pcs[i]
                 points = normalize_point_clouds([points])[0]
                 img = visualize_point_clouds_3d([points], bound=1.0)

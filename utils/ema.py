@@ -30,12 +30,16 @@ import os
 
 class EMA(Optimizer):
     def __init__(self, opt, ema_decay):
+        if not isinstance(opt, Optimizer):
+            raise TypeError("Expected a torch.optim.Optimizer")
+        defaults = opt.defaults
+        super().__init__(opt.param_groups, defaults)  # <-- IMPORTANT!
+
         self.ema_decay = ema_decay
         self.apply_ema = self.ema_decay > 0.
         logger.info('[EMA] apply={}', self.apply_ema)
-        self.optimizer = opt
-        self.state = opt.state
-        self.param_groups = opt.param_groups
+
+        self.optimizer = opt  # Keep wrapped optimizer
 
     def zero_grad(self):
         self.optimizer.zero_grad()
