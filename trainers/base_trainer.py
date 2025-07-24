@@ -141,20 +141,25 @@ class BaseTrainer(ABC):
 
     def build_model(self):
         cfg, args = self.cfg, self.args
-        if args.distributed:
-            dist.barrier()
+        # Remove barrier during model building - it's not needed and causes hangs
+        # if args.distributed:
+        #     dist.barrier()
         model_lib = importlib.import_module(cfg.shapelatent.model)
         model = model_lib.Model(cfg)
         return model
 
     def build_data(self):
-        logger.info('start build_data')
+        logger.info('[DEBUG] start build_data - rank={}', self.args.global_rank)
         cfg, args = self.cfg, self.args
         self.args.eval_trainnll = cfg.eval_trainnll
+        logger.info('[DEBUG] About to import data module: {} - rank={}', cfg.data.type, self.args.global_rank)
         data_lib = importlib.import_module(cfg.data.type)
+        logger.info('[DEBUG] About to call get_data_loaders - rank={}', self.args.global_rank)
         loaders = data_lib.get_data_loaders(cfg.data, args)
+        logger.info('[DEBUG] get_data_loaders completed - rank={}', self.args.global_rank)
         train_loader = loaders['train_loader']
         test_loader = loaders['test_loader']
+        logger.info('[DEBUG] build_data completed successfully - rank={}', self.args.global_rank)
         return train_loader, test_loader
 
     def train_epochs(self):

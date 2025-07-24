@@ -131,7 +131,8 @@ class ShapeNet15kPointClouds(Dataset):
                  all_points_mean=None,
                  all_points_std=None,
                  input_dim=3, 
-                 clip_forge_enable=0, clip_model=None
+                 clip_forge_enable=0, clip_model=None,
+                 min_dataset_size=None
                  ):
         self.clip_forge_enable = clip_forge_enable 
         if clip_forge_enable:
@@ -312,6 +313,16 @@ class ShapeNet15kPointClouds(Dataset):
         self.te_sample_size = min(5000, te_sample_size)
         assert self.scale == 1, "Scale (!= 1) is deprecated"
 
+        # Handle minimum dataset size by repeating samples if needed
+        self.original_dataset_size = len(self.train_points)
+        self.min_dataset_size = min_dataset_size
+        if self.min_dataset_size is not None and self.original_dataset_size < self.min_dataset_size:
+            logger.info('[DATA] Augmenting dataset: original_size={}, min_required={}, will repeat samples', 
+                       self.original_dataset_size, self.min_dataset_size)
+            self.augmented_dataset_size = self.min_dataset_size
+        else:
+            self.augmented_dataset_size = self.original_dataset_size
+
         # Default display axis order
         self.display_axis_order = [0, 1, 2]
 
@@ -341,11 +352,13 @@ class ShapeNet15kPointClouds(Dataset):
         ## self.test_points = self.all_points[:, 10000:]
 
     def __len__(self):
-        return len(self.train_points)
+        return self.augmented_dataset_size
 
     def __getitem__(self, idx):
         output = {}
-        tr_out = self.train_points[idx]
+        # Use modulo to cycle through samples if dataset is augmented
+        actual_idx = idx % self.original_dataset_size
+        tr_out = self.train_points[actual_idx]
         if self.random_subsample and self.sample_with_replacement:
             tr_idxs = np.random.choice(tr_out.shape[0], self.tr_sample_size)
         elif self.random_subsample and not self.sample_with_replacement:
@@ -354,10 +367,10 @@ class ShapeNet15kPointClouds(Dataset):
         else:
             tr_idxs = np.arange(self.tr_sample_size)
         tr_out = torch.from_numpy(tr_out[tr_idxs, :]).float()
-        m, s = self.get_pc_stats(idx)
+        m, s = self.get_pc_stats(actual_idx)
 
-        cate_idx = self.cate_idx_lst[idx]
-        sid, mid = self.all_cate_mids[idx]
+        cate_idx = self.cate_idx_lst[actual_idx]
+        sid, mid = self.all_cate_mids[actual_idx]
         input_pts = tr_out
     
         output.update(
@@ -376,7 +389,7 @@ class ShapeNet15kPointClouds(Dataset):
 
         # read image 
         if self.clip_forge_enable:
-            img_path = self.img_path[idx]
+            img_path = self.img_path[actual_idx]
             img_list = os.listdir(img_path) 
             img_list = [os.path.join(img_path, p) for p in img_list if 'jpg' in p or 'png' in p]
             assert(len(img_list) > 0), f'get empty list at {img_path}: {os.listdir(img_path)}'
@@ -405,13 +418,19 @@ def get_datasets(cfg, args):
         random_subsample = 0
     else:
         random_subsample = cfg.random_subsample
+        
+    # Calculate minimum dataset size to ensure we have enough samples for training
+    # Use at least 5x batch size to ensure multiple batches are possible, especially for large DataParallel batches
+    min_dataset_size = max(cfg.batch_size * 5, 200)  # At least 200 samples or 5x batch size
+    
     logger.info(f'get_datasets: tr_sample_size={cfg.tr_max_sample_points}, '
                 f' te_sample_size={cfg.te_max_sample_points}; '
-                f' random_subsample={random_subsample}'
-                f' normalize_global={cfg.normalize_global}'
-                f' normalize_std_per_axix={cfg.normalize_std_per_axis}'
-                f' normalize_per_shape={cfg.normalize_per_shape}'
-                f' recenter_per_shape={cfg.recenter_per_shape}'
+                f' random_subsample={random_subsample}, '
+                f' normalize_global={cfg.normalize_global}, '
+                f' normalize_std_per_axix={cfg.normalize_std_per_axis}, '
+                f' normalize_per_shape={cfg.normalize_per_shape}, '
+                f' recenter_per_shape={cfg.recenter_per_shape}, '
+                f' min_dataset_size={min_dataset_size}'
                 )
     kwargs = {}
     tr_dataset = ShapeNet15kPointClouds(
@@ -429,10 +448,12 @@ def get_datasets(cfg, args):
         random_subsample=random_subsample,
         clip_forge_enable=cfg.clip_forge_enable,
         clip_model=cfg.clip_model,
+        min_dataset_size=min_dataset_size,
         **kwargs)
 
     eval_split = getattr(args, "eval_split", "val")
     # te_dataset has random_subsample as False, therefore not using sample_with_replacement
+    # For test/validation, we don't need dataset augmentation, so min_dataset_size=None
     te_dataset = ShapeNet15kPointClouds(
         categories=cfg.cates,
         split=eval_split,
@@ -448,6 +469,7 @@ def get_datasets(cfg, args):
         all_points_std=tr_dataset.all_points_std,
         clip_forge_enable=cfg.clip_forge_enable,
         clip_model=cfg.clip_model,
+        min_dataset_size=None,  # No augmentation needed for test/validation
     )
     return tr_dataset, te_dataset
 

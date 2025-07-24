@@ -12,7 +12,7 @@ def get_path(dataname=None):
     dataset_path = {}
     dataset_path['pointflow'] = [
         # '/home/ubuntu/code/scripts/data/ShapeNetCore.v2.PC15k'
-        '/home/ubuntu/code/scripts/outputs3'
+        '/home/ubuntu/data'
 
     ]
     dataset_path['clip_forge_image'] = [

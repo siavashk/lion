@@ -25,6 +25,8 @@ from utils import utils
 @logger.catch(onerror=lambda _: sys.exit(1), reraise=False)
 def main(args, config):
     # -- trainer -- #
+    logger.info('[DEBUG] main function started - rank={}', args.global_rank)
+    logger.info('[DEBUG] About to log trainer type - rank={}', args.global_rank)
     logger.info('use trainer: {}', config.trainer.type)
     trainer_lib = importlib.import_module(config.trainer.type)
     Trainer = trainer_lib.Trainer
@@ -152,6 +154,8 @@ def get_args():
                         default=None,
                         type=str,
                         help="Pretrained cehckpoint")
+    parser.add_argument('--data_parallel', action='store_true',
+                        help='Use DataParallel instead of DistributedDataParallel for multi-GPU training')
 
     args = parser.parse_args()
 
@@ -215,31 +219,56 @@ def get_args():
 if __name__ == '__main__':
     args, config = get_args()
     args.ntest = int(args.ntest) if args.ntest is not None else None
-    size = args.num_process_per_node
-
-    if size > 1:
-        args.distributed = True
-        processes = []
-        for rank in range(size):
-            logger.info('In Rank={}', rank)
-            args.local_rank = rank
-            global_rank = rank + args.node_rank * args.num_process_per_node
-            global_size = args.num_proc_node * args.num_process_per_node
-            args.global_size = global_size
-            args.global_rank = global_rank
-            logger.info('Node rank %d, local proc %d, global proc %d' %
-                        (args.node_rank, rank, global_rank))
-            p = Process(target=utils.init_processes,
-                        args=(global_rank, global_size, main, args, config))
-            p.start()
-            processes.append(p)
-
-        for p in processes:
-            logger.info('join {}', args.local_rank)
-            p.join()
-    else:
-        # for debugging
+    
+    # Check for DataParallel mode first
+    if args.data_parallel:
+        logger.info('Using DataParallel mode - single process with multiple GPUs')
         args.distributed = False
+        args.local_rank = 0
+        args.global_rank = 0
         args.global_size = 1
-        utils.init_processes(0, size, main, args, config)
+        # Run directly without distributed setup
+        main(args, config)
+    # Check if running under torchrun (distributed)
+    elif 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        # Running under torchrun - get rank and world_size from environment
+        args.local_rank = int(os.environ.get('LOCAL_RANK', 0))
+        args.global_rank = int(os.environ.get('RANK', 0))
+        args.global_size = int(os.environ.get('WORLD_SIZE', 1))
+        args.distributed = args.global_size > 1
+        
+        logger.info('Running under torchrun: local_rank={}, global_rank={}, world_size={}', 
+                   args.local_rank, args.global_rank, args.global_size)
+        
+        # Call main directly - torchrun handles the process spawning
+        utils.init_processes(args.global_rank, args.global_size, main, args, config)
+    else:
+        # Manual process spawning (for backwards compatibility)
+        size = args.num_process_per_node
+
+        if size > 1:
+            args.distributed = True
+            processes = []
+            for rank in range(size):
+                logger.info('In Rank={}', rank)
+                args.local_rank = rank
+                global_rank = rank + args.node_rank * args.num_process_per_node
+                global_size = args.num_proc_node * args.num_process_per_node
+                args.global_size = global_size
+                args.global_rank = global_rank
+                logger.info('Node rank %d, local proc %d, global proc %d' %
+                            (args.node_rank, rank, global_rank))
+                p = Process(target=utils.init_processes,
+                            args=(global_rank, global_size, main, args, config))
+                p.start()
+                processes.append(p)
+
+            for p in processes:
+                logger.info('join {}', args.local_rank)
+                p.join()
+        else:
+            # for debugging
+            args.distributed = False
+            args.global_size = 1
+            utils.init_processes(0, size, main, args, config)
     logger.info('should end now')

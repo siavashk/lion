@@ -1033,35 +1033,46 @@ def override_architecture_fields(args, stored_args, logging):
 def init_processes(rank, size, fn, args, config):
     """ Initialize the distributed environment. """
     os.environ['MASTER_ADDR'] = args.master_address
+    # All processes must use the same MASTER_PORT
     os.environ['MASTER_PORT'] = '6020'
-    logger.info('set MASTER_PORT: {}, MASTER_PORT: {}', os.environ['MASTER_ADDR'], os.environ['MASTER_PORT'])
     
-    # if args.num_proc_node == 1:  # try to solve the port occupied issue
-    #     import socket
-    #     import errno
-    #     a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    #     for p in range(6010, 6030):
-    #         location = (args.master_address, p)  # "127.0.0.1", p)
-    #         try:
-    #             a_socket.bind((args.master_address, p))
-    #             logger.debug('set port as {}', p)
-    #             os.environ['MASTER_PORT'] = '%d' % p
-    #             a_socket.close()
-    #             break
-    #         except socket.error as e:
-    #             a = 0
-    #             # if e.errno == errno.EADDRINUSE:
-    #             #    # logger.debug("Port {} is already in use", p)
-    #             # else:
-    #             #    logger.debug(e)
-
+    logger.info('set MASTER_ADDR: {}, MASTER_PORT: {}', os.environ['MASTER_ADDR'], os.environ['MASTER_PORT'])
+    
     logger.info('init_process: rank={}, world_size={}', rank, size)
     torch.cuda.set_device(args.local_rank)
-    dist.init_process_group(
-        backend='nccl', init_method='env://', rank=rank, world_size=size)
+    
+    # Add timeout to prevent hanging
+    import datetime
+    timeout = datetime.timedelta(minutes=30)  # Longer timeout for 8 GPUs
+    
+    try:
+        dist.init_process_group(
+            backend='nccl', init_method='env://', rank=rank, world_size=size, timeout=timeout)
+        logger.info('Successfully initialized process group for rank={}, world_size={}', rank, size)
+        
+        # Test basic communication
+        if size > 1:
+            test_tensor = torch.zeros(1).cuda()
+            dist.all_reduce(test_tensor)
+            logger.info('Distributed communication test passed for rank={}', rank)
+        
+    except Exception as e:
+        logger.error('Failed to initialize process group: rank={}, world_size={}, error={}', rank, size, str(e))
+        raise e
+        
+    logger.info('[DEBUG] About to call main function - rank={}, world_size={}', rank, size)
     fn(args, config)
+    logger.info('[DEBUG] main function returned - rank={}, world_size={}', rank, size)
     logger.info('barrier: rank={}, world_size={}', rank, size)
-    dist.barrier()
+    
+    # Add timeout to barrier as well
+    try:
+        dist.barrier()
+        logger.info('Successfully passed barrier: rank={}, world_size={}', rank, size)
+    except Exception as e:
+        logger.error('Failed at barrier: rank={}, world_size={}, error={}', rank, size, str(e))
+        raise e
+        
     logger.info('skip destroy_process_group: rank={}, world_size={}', rank, size)
     # dist.destroy_process_group()
     logger.info('skip destroy fini')

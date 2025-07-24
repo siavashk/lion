@@ -38,28 +38,61 @@ class Trainer(BaseTrainer):
         self.sample_num_points = cfg.data.tr_max_sample_points
         device = torch.device('cuda:%d' % args.local_rank)
         self.device_str = 'cuda:%d' % args.local_rank
+        
+        logger.info('[DEBUG] hvae_trainer init starting on device={}', device)
+        
         if not cfg.trainer.use_grad_scalar:
             self.grad_scalar = utils.DummyGradScalar()
         else:
             logger.info('Init GradScaler!')
             self.grad_scalar = GradScaler(2**10, enabled=True)
 
+        logger.info('[DEBUG] About to build model on device={}', device)
         self.model = self.build_model().to(device)
+        logger.info('[DEBUG] Model built successfully on device={}', device)
+        
         if len(self.cfg.sde.vae_checkpoint):
             logger.info('Load vae_checkpoint: {}', self.cfg.sde.vae_checkpoint)
             self.model.load_state_dict(
                     torch.load(self.cfg.sde.vae_checkpoint)['model'])
 
-        logger.info('broadcast_params: device={}', device)
-        utils.broadcast_params(self.model.parameters(),
-                               args.distributed)
+        # Handle DataParallel vs DistributedDataParallel
+        if hasattr(args, 'data_parallel') and args.data_parallel:
+            if torch.cuda.device_count() > 1:
+                gpu_list = list(range(torch.cuda.device_count()))
+                logger.info('Using DataParallel with {} GPUs: {}', torch.cuda.device_count(), gpu_list)
+                self.model = torch.nn.DataParallel(self.model, device_ids=gpu_list)
+                self.is_data_parallel = True
+                # Log memory usage on all GPUs
+                for i in range(torch.cuda.device_count()):
+                    mem_allocated = torch.cuda.memory_allocated(i) / 1024**3  # GB
+                    mem_reserved = torch.cuda.memory_reserved(i) / 1024**3   # GB
+                    logger.info('GPU {} - Allocated: {:.2f}GB, Reserved: {:.2f}GB', i, mem_allocated, mem_reserved)
+            else:
+                logger.info('DataParallel requested but only 1 GPU available')
+                self.is_data_parallel = False
+        else:
+            logger.info('[DEBUG] About to broadcast_params on device={}', device)
+            utils.broadcast_params(self.model.parameters(),
+                                   args.distributed)
+            logger.info('[DEBUG] broadcast_params completed on device={}', device)
+            self.is_data_parallel = False
+        
         self.build_other_module()
+        logger.info('[DEBUG] build_other_module completed on device={}', device)
+        
         if args.distributed:
-            logger.info('waitting for barrier, device={}', device)
-            dist.barrier()
-            logger.info('pass barrier, device={}', device)
+            logger.info('[DEBUG] About to wait for barrier on device={}', device)
+            try:
+                dist.barrier()
+                logger.info('[DEBUG] Successfully passed barrier on device={}', device)
+            except Exception as e:
+                logger.error('Barrier failed on device={}, error={}', device, str(e))
+                raise e
 
+        logger.info('[DEBUG] About to build data on device={}', device)
         self.train_loader, self.test_loader = self.build_data()
+        logger.info('[DEBUG] Data built successfully on device={}', device)
 
         # The optimizer
         self.optimizer, self.scheduler = utils.get_opt(
@@ -72,7 +105,7 @@ class Trainer(BaseTrainer):
 
         # Prepare variable for summy
         self.num_points = self.cfg.data.tr_max_sample_points
-        logger.info('done init trainer @{}', device)
+        logger.info('[DEBUG] hvae_trainer init completed successfully on device={}', device)
 
         # Prepare for evaluation
         # init the latent for validate
@@ -111,7 +144,9 @@ class Trainer(BaseTrainer):
         batch_size = tr_pts.size(0)
         model_kwargs = {}
         with autocast(enabled=self.cfg.sde.autocast_train):
-            res = self.model.get_loss(tr_pts, writer=self.writer,
+            # Use .module for DataParallel to access underlying model methods
+            model = self.model.module if self.is_data_parallel else self.model
+            res = model.get_loss(tr_pts, writer=self.writer,
                                       it=step, **model_kwargs)
             loss = res['loss'].mean()
             lossv = loss.detach().cpu().item()
@@ -169,7 +204,9 @@ class Trainer(BaseTrainer):
         bound = 1.5 if 'chair' in self.cfg.data.cates else 1.0
         assert(not self.cfg.data.cond_on_cat)
         val_class_label = tr_class_label = None
-        validate_inspect_noprior(self.model,
+        # Use .module for DataParallel to access underlying model methods
+        model = self.model.module if self.is_data_parallel else self.model
+        validate_inspect_noprior(model,
                                  step, self.writer, self.sample_num_points,
                                  need_sample=0, need_val=1, need_train=0,
                                  num_samples=self.num_val_samples,
@@ -192,7 +229,9 @@ class Trainer(BaseTrainer):
         self.model.eval()
 
         # ---- forward sampling ---- #
-        gen_x = self.model.sample(
+        # Use .module for DataParallel to access underlying model methods
+        model = self.model.module if self.is_data_parallel else self.model
+        gen_x = model.sample(
             num_samples=num_shapes, device_str=self.device_str)
         # gen_x: BNC
         CHECKEQ(gen_x.shape[2], self.cfg.ddpm.input_dim)
